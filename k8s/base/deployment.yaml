@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: psn-exporter
+  labels:
+    app: psn-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: psn-exporter
+  template:
+    metadata:
+      labels:
+        app: psn-exporter
+    spec:
+      containers:
+      - name: exporter
+        image: ghcr.io/sai7teja/psn-exporter:latest # This will be overridden by Kustomize/CI
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        envFrom:
+        # 1. Pulls non-sensitive URLs from the ConfigMap (auto-generated from settings.env)
+        - configMapRef:
+            name: psn-config
+        # 2. Pulls sensitive tokens from the Kubernetes Secret (created manually on the cluster)
+        - secretRef:
+            name: psn-secrets

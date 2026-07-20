@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+echo "========================================="
+echo " Bootstrapping Oracle Cloud 1GB Micro VM "
+echo "========================================="
+
+echo "1. Creating 15GB Swap File (Crucial for 1GB RAM limits)..."
+if [ ! -f /swapfile ]; then
+    sudo fallocate -l 15G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    echo "✅ Swap created successfully."
+else
+    echo "✅ Swapfile already exists."
+fi
+
+echo "2. Installing Lightweight K3s..."
+# We disable Traefik, ServiceLB, and the Metrics Server to save ~300MB of RAM.
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --disable metrics-server" sh -
+
+echo "Waiting for K3s to initialize (20 seconds)..."
+sleep 20
+
+echo "3. Installing ArgoCD (GitOps Controller)..."
+sudo k3s kubectl create namespace argocd || true
+sudo k3s kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --server-side
+
+echo "========================================="
+echo "✅ VM Successfully Bootstrapped!"
+echo "========================================="

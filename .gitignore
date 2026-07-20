@@ -1,0 +1,8 @@
+.env
+.oci/
+terraform-oci/.terraform/
+terraform-oci/terraform.tfstate*
+terraform-oci/*.tfvars
+__pycache__/
+*.pem
+*.log
