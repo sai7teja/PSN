@@ -39,9 +39,6 @@ spec:
         - name: gcp-secrets-store
           mountPath: "/mnt/gcp-secrets"
           readOnly: true
-        - name: vault-secrets-store
-          mountPath: "/mnt/vault-secrets"
-          readOnly: true
       volumes:
         - name: gcp-secrets-store
           csi:
@@ -51,12 +48,6 @@ spec:
               secretProviderClass: "gcp-provider"
             nodePublishSecretRef:
               name: gcp-sa-secret
-        - name: vault-secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: "vault-provider"
 ---
 apiVersion: v1
 kind: ServiceAccount

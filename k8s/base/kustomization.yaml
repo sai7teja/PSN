@@ -6,7 +6,6 @@ namespace: psn
 resources:
   - deployment.yaml
   - secret-provider-gcp.yaml
-  - secret-provider-vault.yaml
 
 # Automatically generates a ConfigMap from settings.env
 # It appends a hash to the name, forcing a pod restart if you change the URL!
