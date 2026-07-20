@@ -14,6 +14,7 @@ spec:
       labels:
         app: psn-exporter
     spec:
+      serviceAccountName: psn-exporter
       containers:
       - name: exporter
         image: ghcr.io/sai7teja/psn-exporter:latest # This will be overridden by Kustomize/CI
@@ -29,6 +30,35 @@ spec:
         # 1. Pulls non-sensitive URLs from the ConfigMap (auto-generated from settings.env)
         - configMapRef:
             name: psn-config
-        # 2. Pulls sensitive tokens from the Kubernetes Secret (created manually on the cluster)
+        # 2. Pulls sensitive tokens from the CSI-generated Secrets
         - secretRef:
-            name: psn-secrets
+            name: gcp-secrets
+        - secretRef:
+            name: vault-secrets
+        volumeMounts:
+        - name: gcp-secrets-store
+          mountPath: "/mnt/gcp-secrets"
+          readOnly: true
+        - name: vault-secrets-store
+          mountPath: "/mnt/vault-secrets"
+          readOnly: true
+      volumes:
+        - name: gcp-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "gcp-provider"
+            nodePublishSecretRef:
+              name: gcp-sa-secret
+        - name: vault-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "vault-provider"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: psn-exporter
