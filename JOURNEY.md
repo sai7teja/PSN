@@ -40,3 +40,9 @@ Whenever new Python code is pushed:
 
 ## 7. Automated Expiration Alerting
 The PSN NPSSO token expires approximately every 60 days. Instead of relying on external scripts to track the expiration date, we updated the Python exporter to catch the `PSNAWPAuthenticationError` exception. When caught, it pushes a `psn_token_expired=1` metric to Grafana Cloud, triggering an immediate email alert so the token can be rotated via Google Cloud Secret Manager.
+
+## 8. AI/MCP Integration & The Grafana Token Discovery
+To take the project a step further, we integrated **Model Context Protocol (MCP)** to allow the Antigravity AI to natively interact with the Grafana Cloud dashboards. 
+- **The Problem:** The initial configuration failed with a `401 Unauthorized` API error. 
+- **The Discovery:** We realized that Grafana Cloud has two entirely distinct token ecosystems. The token we initially generated (`glc_...` Cloud Access Policy) was strictly a "Prometheus Metrics Publisher" token. This is excellent for backend security (as it limits the exporter pod to only pushing data), but it fundamentally lacks permissions to query the Grafana UI or read dashboard configurations.
+- **The Solution:** We explicitly generated a native **Grafana Service Account Token** (`glsa_...`) within the UI, mapped it to the `Viewer` role, and injected it into the local `mcp.json` config. This instantly unlocked the AI's ability to natively fetch and read the `PSN Network Dashboard` and other Observability metrics directly from the chat interface.
