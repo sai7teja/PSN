@@ -99,6 +99,7 @@ def fetch_stats(token):
 
         # Record successful sync
         metrics.append({'metric': {'__name__': 'psn_data_last_sync_success'}, 'values': [1], 'timestamps': [ts]})
+        metrics.append({'metric': {'__name__': 'psn_token_expired'}, 'values': [0], 'timestamps': [ts]})
         metrics.append({'metric': {'__name__': 'psn_data_last_sync'}, 'values': [int(time.time())], 'timestamps': [ts]})
         
         logger.info(f"Successfully formatted {len(metrics)} metric data points.")
@@ -106,6 +107,13 @@ def fetch_stats(token):
     except Exception as e:
         logger.error(f"Error fetching PSN data: {e}")
         metrics.append({'metric': {'__name__': 'psn_data_last_sync_success'}, 'values': [0], 'timestamps': [ts]})
+        
+        # If the error is related to authentication, flag the token as expired
+        if "Authentication" in str(type(e).__name__) or "401" in str(e) or "403" in str(e):
+            logger.error("🚨 PSN Token has EXPIRED! Pushing metric to trigger Grafana Alert.")
+            metrics.append({'metric': {'__name__': 'psn_token_expired'}, 'values': [1], 'timestamps': [ts]})
+        else:
+            metrics.append({'metric': {'__name__': 'psn_token_expired'}, 'values': [0], 'timestamps': [ts]})
 
     finally:
         # Force garbage collection to keep RAM usage strictly low for the 1GB VM
