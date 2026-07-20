@@ -1,0 +1,42 @@
+# Project Journey & Problem Solving Log
+
+This document serves as a chronological record of the engineering challenges faced during the development of this GitOps-driven PSN Exporter, and exactly how we solved them.
+
+## 1. The Core Objective
+The goal was to build a highly available, GitOps-managed Python exporter that connects to the PlayStation Network (PSNAWP), extracts user trophy and playtime metrics, and pushes them to Grafana Cloud. 
+**The primary constraint:** The entire infrastructure must run on an Oracle Cloud "Always Free" Tier VM (1 OCPU, 1GB RAM) without incurring any costs.
+
+## 2. Infrastructure & Tooling Selection
+- **Compute:** Oracle Cloud `VM.Standard.E2.1.Micro`.
+- **Kubernetes:** We rejected standard K8s and Minikube as they are too heavy for 1GB RAM. We selected **K3s**, specifically stripping out components like Traefik, ServiceLB, and Metrics Server to save ~400MB of RAM.
+- **Deployment Strategy:** We rejected Watchtower (too simple) and standard `kubectl apply` (not scalable). We selected **ArgoCD** to achieve true GitOps automation.
+- **Data Storage:** Running Prometheus *inside* the 1GB cluster would immediately cause Out-Of-Memory (OOM) crashes. We solved this by using the `prometheus-remote-writer` Python library to push metrics **directly** to Grafana Cloud's remote endpoint, bypassing local storage entirely.
+
+## 3. The Great 1GB RAM Bottleneck
+When we initially attempted to deploy ArgoCD alongside K3s on the 1GB VM, the server catastrophically crashed. 
+- **The Problem:** The Kubernetes API Server (`etcd`/`sqlite`) and ArgoCD's application controller require massive spikes of memory during initialization. The VM completely exhausted its physical RAM and locked up.
+- **The Solution:** We ssh'd into the VM and forcefully detached 15GB of free disk space from the boot volume to create a massive `/swapfile`. This allowed the Linux kernel to page idle memory to the SSD, completely eliminating the OOM crashes. At its peak, the cluster actively utilized over 700MB of Swap memory just to keep K3s and ArgoCD stable!
+
+## 4. Overcoming Server-Side Apply Limitations
+When deploying ArgoCD using the standard `install.yaml`, Kubernetes threw a massive error: `Request entity too large: limit is 3145728`.
+- **The Problem:** The ArgoCD Custom Resource Definitions (CRDs) were so large that they exceeded the maximum allowed size for a standard client-side `kubectl apply` annotation.
+- **The Solution:** We modified the deployment script to use `kubectl apply --server-side`. This forces the Kubernetes API server to handle the merge logic internally, bypassing the annotation size limit entirely.
+
+## 5. Security & The Multi-Cloud CSI Architecture
+Instead of storing sensitive PSN and Grafana API tokens directly inside the GitHub repository or as raw Kubernetes Secrets, we engineered a dual-provider Secrets Store CSI setup:
+1. **Google Cloud Secret Manager:** We created a dedicated GCP Service Account and used the `provider-gcp-plugin` to dynamically pull the PSN token.
+2. **HashiCorp Vault:** We integrated a HashiCorp Vault instance (using Kubernetes Authentication) to store and provide the Grafana API Key.
+
+**The Ultimate Bottleneck:** While the CSI driver was a massive security upgrade, attempting to install the HashiCorp Vault Helm chart *alongside* ArgoCD on a 1 OCPU machine caused the Kubernetes API server to repeatedly timeout and crash (`TLS handshake timeout`). 
+**The Compromise:** We realized that while 15GB of Swap solved the *memory* problem, the 1 OCPU was simply too weak to handle the CPU-intensive cryptography and startup routines of an enterprise Vault server. We pivoted to a Hybrid approach: using the CSI Driver exclusively for Google Cloud (which has minimal CPU overhead), and falling back to a native Kubernetes secret for the secondary token.
+
+## 6. Continuous Integration (CI/CD)
+To finalize the GitOps loop, we built a GitHub Actions pipeline (`.github/workflows/ci.yml`). 
+Whenever new Python code is pushed:
+1. GitHub builds a multi-architecture Docker image.
+2. It pushes the image to GitHub Container Registry (`ghcr.io`).
+3. It automatically rewrites the `kustomization.yaml` file with the new Git SHA tag and commits it back to the repo.
+4. ArgoCD detects the new commit and instantly rolls out the update to the Oracle VM.
+
+## 7. Automated Expiration Alerting
+The PSN NPSSO token expires approximately every 60 days. Instead of relying on external scripts to track the expiration date, we updated the Python exporter to catch the `PSNAWPAuthenticationError` exception. When caught, it pushes a `psn_token_expired=1` metric to Grafana Cloud, triggering an immediate email alert so the token can be rotated via Google Cloud Secret Manager.
