@@ -1,0 +1,49 @@
+name: CI/CD GitOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build for AMD64 (Oracle VM.Standard.E2.1.Micro architecture)
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Install Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Update Kustomization Image Tag
+        run: |
+          cd k8s/base
+          # This updates kustomization.yaml to point to the newly built image tag
+          kustomize edit set image ghcr.io/sai7teja/psn-exporter=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          
+          # Commit the change back to the repository so ArgoCD can detect it
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git commit -am "chore: auto-update image tag to ${{ github.sha }}"
+          git push
