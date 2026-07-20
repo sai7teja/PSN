@@ -29,8 +29,10 @@ sudo k3s kubectl apply -f https://github.com/fluxcd/flux2/releases/latest/downlo
 echo "Waiting for FluxCD to initialize (15 seconds)..."
 sleep 15
 echo "Applying Flux configuration..."
-sudo k3s kubectl apply -f flux/
+sudo k3s kubectl apply -f https://raw.githubusercontent.com/sai7teja/PSN/main/flux/psn-source.yaml
+sudo k3s kubectl apply -f https://raw.githubusercontent.com/sai7teja/PSN/main/flux/psn-kustomization.yaml
 
+echo "FluxCD GitOps Sync Initialized!"
 echo "========================================="
 echo "✅ VM Successfully Bootstrapped!"
 echo "========================================="
