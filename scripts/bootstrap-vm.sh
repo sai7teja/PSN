@@ -24,9 +24,12 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable ser
 echo "Waiting for K3s to initialize (20 seconds)..."
 sleep 20
 
-echo "3. Installing ArgoCD (GitOps Controller)..."
-sudo k3s kubectl create namespace argocd || true
-sudo k3s kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --server-side
+echo "3. Installing FluxCD (Lightweight GitOps Controller)..."
+sudo k3s kubectl apply -f https://github.com/fluxcd/flux2/releases/latest/download/install.yaml --server-side
+echo "Waiting for FluxCD to initialize (15 seconds)..."
+sleep 15
+echo "Applying Flux configuration..."
+sudo k3s kubectl apply -f flux/
 
 echo "========================================="
 echo "✅ VM Successfully Bootstrapped!"

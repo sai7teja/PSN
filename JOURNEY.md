@@ -9,7 +9,7 @@ The goal was to build a highly available, GitOps-managed Python exporter that co
 ## 2. Infrastructure & Tooling Selection
 - **Compute:** Oracle Cloud `VM.Standard.E2.1.Micro`.
 - **Kubernetes:** We rejected standard K8s and Minikube as they are too heavy for 1GB RAM. We selected **K3s**, specifically stripping out components like Traefik, ServiceLB, and Metrics Server to save ~400MB of RAM.
-- **Deployment Strategy:** We rejected Watchtower (too simple) and standard `kubectl apply` (not scalable). We selected **ArgoCD** to achieve true GitOps automation.
+- **Deployment Strategy:** We rejected Watchtower (too simple) and standard `kubectl apply` (not scalable). We initially selected ArgoCD, but eventually pivoted to **FluxCD** to achieve true GitOps automation without the massive CPU overhead.
 - **Data Storage:** Running Prometheus *inside* the 1GB cluster would immediately cause Out-Of-Memory (OOM) crashes. We solved this by using the `prometheus-remote-writer` Python library to push metrics **directly** to Grafana Cloud's remote endpoint, bypassing local storage entirely.
 
 ## 3. The Great 1GB RAM Bottleneck
@@ -36,7 +36,7 @@ Whenever new Python code is pushed:
 1. GitHub builds a multi-architecture Docker image.
 2. It pushes the image to GitHub Container Registry (`ghcr.io`).
 3. It automatically rewrites the `kustomization.yaml` file with the new Git SHA tag and commits it back to the repo.
-4. ArgoCD detects the new commit and instantly rolls out the update to the Oracle VM.
+4. FluxCD detects the new commit and instantly rolls out the update to the Oracle VM.
 
 ## 7. Automated Expiration Alerting
 The PSN NPSSO token expires approximately every 60 days. Instead of relying on external scripts to track the expiration date, we updated the Python exporter to catch the `PSNAWPAuthenticationError` exception. When caught, it pushes a `psn_token_expired=1` metric to Grafana Cloud, triggering an immediate email alert so the token can be rotated via Google Cloud Secret Manager.
@@ -52,3 +52,8 @@ While Swap memory prevented OOM crashes, we continuously hit a hard CPU bottlene
 - **The Problem:** The `VM.Standard.E2.1.Micro` instance is strictly locked to 1 OCPU. ArgoCD relies heavily on multiple Go-based microservices (Repo Server, Application Controller) to process git hooks and render manifests. When ArgoCD triggered a sync, CPU usage spiked to 100%, completely starving the K3s API Server. This resulted in continuous `TLS handshake timeout` errors and caused `kubectl` commands to fail entirely until K3s was forcefully restarted via `systemctl`.
 - **The Solution (Bypass):** We bypassed the ArgoCD OpenAPI validation timeout by manually applying the Kustomize manifests directly to the cluster with `--validate=false` to ensure the PSN pods could start.
 - **The Ultimate Resolution (Hardware Upgrade):** We realized this architecture requires more than 1 OCPU. We attempted to provision Oracle's "Always Free" **Arm Ampere A1 Compute** instance (which provides 4 OCPUs and 24GB RAM). However, Oracle was completely out of physical ARM host capacity in the region. We engineered an automated Terraform auto-sniper loop script to continuously attempt provisioning the 24GB machine in the background until Oracle frees up a slot.
+
+## 10. The Architectural Pivot: Migrating to FluxCD
+Because the 24GB ARM instance was out of capacity, we were forced to stabilize the existing 1 OCPU VM. 
+- **The Problem:** The CPU spikes caused by ArgoCD's heavy Go microservices (specifically the repo-server and redis caches) made the cluster fundamentally unstable.
+- **The Solution:** We completely uninstalled ArgoCD from the cluster and replaced it with **FluxCD**. FluxCD executes the exact same GitOps reconciliation loop but does so without a Web UI, Redis caches, or heavy controller meshes. This reduced the idle CPU usage dramatically, finally allowing the 1 OCPU Kubernetes API server to breathe and eliminating the `TLS handshake timeout` errors permanently.

@@ -42,7 +42,7 @@ jobs:
           # This updates kustomization.yaml to point to the newly built image tag
           kustomize edit set image ghcr.io/sai7teja/psn-exporter=ghcr.io/${{ github.repository }}:${{ github.sha }}
           
-          # Commit the change back to the repository so ArgoCD can detect it
+          # Commit the change back to the repository so FluxCD can detect it
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
           git commit -am "chore: auto-update image tag to ${{ github.sha }}"

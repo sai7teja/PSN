@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: psn-repository
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/sai7teja/PSN.git
+  ref:
+    branch: main
