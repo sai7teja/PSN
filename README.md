@@ -2,6 +2,8 @@
 
 This repository contains a fully automated, GitOps-driven deployment for a PlayStation Network (PSN) data exporter. It runs on a lightweight Kubernetes (K3s) cluster managed by ArgoCD, and pushes metrics directly to Grafana Cloud.
 
+> 📖 **Deep Dive:** For a highly detailed, step-by-step technical breakdown of the multi-cloud security, CSI drivers, and memory optimizations, please read the [**Detailed Architecture Guide (`ARCHITECTURE.md`)**](ARCHITECTURE.md).
+
 ## 🌟 The Challenge: 1GB RAM
 
 This architecture was specifically designed to run on the **Oracle Cloud Always Free `VM.Standard.E2.1.Micro` instance**, which provides only **1 OCPU and 1GB of RAM**. 
