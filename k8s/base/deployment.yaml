@@ -46,11 +46,6 @@ spec:
         # 1. Pulls non-sensitive URLs from the ConfigMap (auto-generated from settings.env)
         - configMapRef:
             name: psn-config
-        # 2. Pulls sensitive tokens from the CSI-generated Secrets
-        - secretRef:
-            name: gcp-secrets
-        - secretRef:
-            name: vault-secrets
 ---
 apiVersion: v1
 kind: ServiceAccount
