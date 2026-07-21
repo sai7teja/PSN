@@ -57,3 +57,8 @@ While Swap memory prevented OOM crashes, we continuously hit a hard CPU bottlene
 Because the 24GB ARM instance was out of capacity, we were forced to stabilize the existing 1 OCPU VM. 
 - **The Problem:** The CPU spikes caused by ArgoCD's heavy Go microservices (specifically the repo-server and redis caches) made the cluster fundamentally unstable.
 - **The Solution:** We completely uninstalled ArgoCD from the cluster and replaced it with **FluxCD**. FluxCD executes the exact same GitOps reconciliation loop but does so without a Web UI, Redis caches, or heavy controller meshes. This reduced the idle CPU usage dramatically, finally allowing the 1 OCPU Kubernetes API server to breathe and eliminating the `TLS handshake timeout` errors permanently.
+
+## 11. Debugging the GitHub Actions Pipeline
+While verifying the continuous integration pipeline (`ci.yml`), we discovered that the automated Docker build step was silently failing.
+- **The Problem:** The pipeline was programmed to tag images dynamically using the `${{ github.repository }}` environment variable. Because the GitHub repository is named `sai7teja/PSN` (with capital letters), the pipeline attempted to push the image as `ghcr.io/sai7teja/PSN`. Docker Container Registries have a strict protocol that repository tags must be exclusively lowercase. Docker rejected the push with an `invalid reference format` error.
+- **The Solution:** We refactored the CI workflow file to hardcode the lowercase equivalent (`ghcr.io/sai7teja/psn-exporter`). This ensured the reference format was valid and allowed the GitHub Action to successfully compile and push the new Python exporter image to the registry.
