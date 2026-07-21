@@ -17,4 +17,4 @@ configMapGenerator:
 images:
 - name: ghcr.io/sai7teja/psn-exporter
   newName: ghcr.io/sai7teja/psn-exporter
-  newTag: aae486b73a3483e3359618fa5b30346b34f8f226
+  newTag: b0c49094737f640a85c8e8d744a0edf57fb9426a
