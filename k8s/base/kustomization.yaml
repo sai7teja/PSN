@@ -4,16 +4,18 @@ kind: Kustomization
 namespace: psn
 
 resources:
-  - deployment.yaml
-  - secret-provider-gcp.yaml
+- deployment.yaml
+- secret-provider-gcp.yaml
 
 # Automatically generates a ConfigMap from settings.env
 # It appends a hash to the name, forcing a pod restart if you change the URL!
 configMapGenerator:
-  - name: psn-config
-    env: settings.env
+- envs:
+  - settings.env
+  name: psn-config
 
 # The CI pipeline will automatically update the newTag here during builds
 images:
-  - name: ghcr.io/sai7teja/psn-exporter
-    newTag: latest
+- name: ghcr.io/sai7teja/psn-exporter
+  newName: ghcr.io/sai7teja/psn-exporter
+  newTag: 2ffdd38efa98f83e28943095ecbde406dc4f6468
