@@ -29,6 +29,16 @@ from prometheus_remote_writer import RemoteWriter
 # Prevent hanging API calls on the 1 OCPU VM
 socket.setdefaulttimeout(30)
 
+# ==========================================================================
+# RATE LIMITING CONFIGURATION
+# PSNAWP enforces 300 requests per 15 minutes. We add strategic sleep points
+# between API calls to stay well within this budget. The per-game trophy
+# fetch loop is the heaviest consumer (~1 call per game with earned trophies).
+# ==========================================================================
+API_SLEEP_LIGHT = 0.5   # Sleep between lightweight API calls (friends, summary)
+API_SLEEP_MEDIUM = 1.0  # Sleep between moderate calls (title_stats pagination)
+API_SLEEP_HEAVY = 3.0   # Sleep between heavy calls (per-game trophy detail fetch)
+
 # Set up robust logging for Kubernetes (stdout)
 logging.basicConfig(
     level=logging.INFO,
@@ -81,6 +91,7 @@ def fetch_stats(token):
     """Connects to PSN, fetches ALL data, and formats for Grafana Cloud remote write."""
     metrics = []
     sync_errors = {}
+    api_calls = 0  # Track total PSN API hits per sync cycle
     start_time = time.time()
     # Grafana Cloud remote write expects milliseconds for timestamps
     ts = int(time.time() * 1000)
@@ -88,12 +99,15 @@ def fetch_stats(token):
     try:
         psn = PSNAWP(token)
         client = psn.me()
+        api_calls += 1  # PSNAWP auth + me() endpoint
         logger.info("Connected to PSN API successfully.")
 
         # ==================================================================
         # 1. ACCOUNT SUMMARY
         # ==================================================================
         summary = client.trophy_summary()
+        api_calls += 1
+        time.sleep(API_SLEEP_LIGHT)  # Rate limit: pause after account summary
         metrics.extend([
             {'metric': {'__name__': 'psn_account_trophy_level'}, 'values': [summary.trophy_level or 0], 'timestamps': [ts]},
             {'metric': {'__name__': 'psn_account_trophy_progress'}, 'values': [summary.progress or 0], 'timestamps': [ts]},
@@ -117,6 +131,8 @@ def fetch_stats(token):
         # ==================================================================
         try:
             friends = list(client.friends_list())
+            api_calls += 1
+            time.sleep(API_SLEEP_LIGHT)  # Rate limit: pause after friends list
             metrics.append({'metric': {'__name__': 'psn_friends_count'}, 'values': [len(friends)], 'timestamps': [ts]})
             logger.info(f"Friends count: {len(friends)}")
 
@@ -126,6 +142,8 @@ def fetch_stats(token):
                 friend_account_ids = [f.account_id for f in friends]
                 if friend_account_ids:
                     presences = client.get_presences(friend_account_ids)
+                    api_calls += 1
+                    time.sleep(API_SLEEP_LIGHT)  # Rate limit: pause after presence check
                     for pres in presences:
                         try:
                             if pres.basic_presence.primary_platform_info.online_status == 'online':
@@ -145,6 +163,8 @@ def fetch_stats(token):
         # ==================================================================
         logger.info("Fetching trophy titles...")
         trophy_titles = list(client.trophy_titles())
+        api_calls += 1
+        time.sleep(API_SLEEP_MEDIUM)  # Rate limit: pause after fetching full game library
         metrics.append({'metric': {'__name__': 'psn_games_total'}, 'values': [len(trophy_titles)], 'timestamps': [ts]})
         logger.info(f"Found {len(trophy_titles)} trophy titles.")
 
@@ -215,8 +235,11 @@ def fetch_stats(token):
 
             if total_earned_in_title > 0 and trophy_title.np_communication_id:
                 try:
+                    # Rate limit: heavy sleep before each per-game trophy API call
+                    time.sleep(API_SLEEP_HEAVY)
                     platform_code = list(trophy_title.title_platform)[0] if trophy_title.title_platform else 'PS5'
                     trophies = list(client.trophies(trophy_title.np_communication_id, platform_code))
+                    api_calls += 1
 
                     for trophy in trophies:
                         if getattr(trophy, 'earned', False):
@@ -252,14 +275,16 @@ def fetch_stats(token):
                     logger.warning(f"Failed to fetch trophies for {title_name}: {e}")
                     sync_errors['trophy_fetch'] = sync_errors.get('trophy_fetch', 0) + 1
 
-        logger.info(f"Processed {earned_trophy_count} individual earned trophies across all games.")
+        logger.info(f"Processed {earned_trophy_count} individual earned trophies across all games. API calls so far: {api_calls}")
 
         # ==================================================================
         # 5. PLAY TIME STATISTICS (with first/last played timestamps)
         # ==================================================================
         logger.info("Fetching title play statistics...")
+        time.sleep(API_SLEEP_MEDIUM)  # Rate limit: pause before title_stats
         try:
             titles = list(client.title_stats())
+            api_calls += 1
             for title in titles:
                 title_name = sanitize_label(title.name)
                 title_id = sanitize_label(title.title_id) if hasattr(title, 'title_id') else 'unknown'
@@ -321,6 +346,8 @@ def fetch_stats(token):
             # Backward compat
             {'metric': {'__name__': 'psn_data_last_sync'}, 'values': [int(end_time)], 'timestamps': [ts]},
             {'metric': {'__name__': 'psn_sync_duration_seconds'}, 'values': [round(sync_duration, 2)], 'timestamps': [ts]},
+            # API usage tracking (PSNAWP limit: 300 requests / 15 minutes)
+            {'metric': {'__name__': 'psn_api_calls_per_sync'}, 'values': [api_calls], 'timestamps': [ts]},
         ])
 
         # Push individual error counters
@@ -333,7 +360,7 @@ def fetch_stats(token):
         logger.info(
             f"✅ Successfully formatted {len(metrics)} metric data points. "
             f"Level={summary.trophy_level}, Games={len(trophy_titles)}, "
-            f"Earned Trophies={earned_trophy_count}, Duration={sync_duration:.2f}s"
+            f"Earned Trophies={earned_trophy_count}, API Calls={api_calls}/300, Duration={sync_duration:.2f}s"
         )
 
     except Exception as e:
