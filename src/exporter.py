@@ -139,17 +139,23 @@ def fetch_stats(token):
             # Push online status of friends (how many are currently online)
             online_count = 0
             try:
+                # Try multiple possible method names for presence lookup
                 friend_account_ids = [f.account_id for f in friends]
                 if friend_account_ids:
-                    presences = client.get_presences(friend_account_ids)
-                    api_calls += 1
-                    time.sleep(API_SLEEP_LIGHT)  # Rate limit: pause after presence check
-                    for pres in presences:
-                        try:
-                            if pres.basic_presence.primary_platform_info.online_status == 'online':
-                                online_count += 1
-                        except (AttributeError, TypeError):
-                            pass
+                    # PSNAWP library has inconsistent method names across versions
+                    get_pres = getattr(client, 'get_presences', None) or getattr(client, 'presence', None)
+                    if get_pres:
+                        presences = get_pres(friend_account_ids)
+                        api_calls += 1
+                        time.sleep(API_SLEEP_LIGHT)  # Rate limit: pause after presence check
+                        for pres in presences:
+                            try:
+                                if pres.basic_presence.primary_platform_info.online_status == 'online':
+                                    online_count += 1
+                            except (AttributeError, TypeError):
+                                pass
+                    else:
+                        logger.info("Presence API not available in this PSNAWP version, skipping.")
             except Exception as e:
                 logger.warning(f"Could not fetch friend presences: {e}")
 
@@ -214,11 +220,12 @@ def fetch_stats(token):
                         'values': [count], 'timestamps': [ts]
                     })
 
-            # Trophy last updated timestamp
-            if trophy_title.last_updated_datetime:
+            # Trophy last updated timestamp (attribute name varies by PSNAWP version)
+            last_updated = getattr(trophy_title, 'last_updated_datetime', None) or getattr(trophy_title, 'last_updated_date_time', None)
+            if last_updated:
                 metrics.append({
                     'metric': {'__name__': 'psn_game_trophy_last_updated_timestamp', 'title': title_name, 'title_id': title_id, 'platform': platform},
-                    'values': [datetime_to_ms(trophy_title.last_updated_datetime)], 'timestamps': [ts]
+                    'values': [datetime_to_ms(last_updated)], 'timestamps': [ts]
                 })
 
             # ==============================================================
