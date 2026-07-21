@@ -26,6 +26,22 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "200m"
+        env:
+          - name: PSN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: psn-credentials
+                key: PSN_TOKEN
+          - name: GRAFANA_URL
+            valueFrom:
+              secretKeyRef:
+                name: grafana-credentials
+                key: GRAFANA_URL
+          - name: GRAFANA_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: grafana-credentials
+                key: GRAFANA_API_KEY
         envFrom:
         # 1. Pulls non-sensitive URLs from the ConfigMap (auto-generated from settings.env)
         - configMapRef:
@@ -35,19 +51,6 @@ spec:
             name: gcp-secrets
         - secretRef:
             name: vault-secrets
-        volumeMounts:
-        - name: gcp-secrets-store
-          mountPath: "/mnt/gcp-secrets"
-          readOnly: true
-      volumes:
-        - name: gcp-secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: "gcp-provider"
-            nodePublishSecretRef:
-              name: gcp-sa-secret
 ---
 apiVersion: v1
 kind: ServiceAccount
