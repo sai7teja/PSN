@@ -41,7 +41,7 @@ spec:
             valueFrom:
               secretKeyRef:
                 name: grafana-credentials
-                key: GRAFANA_API_KEY
+                key: GRAFANA_TOKEN
         envFrom:
         # 1. Pulls non-sensitive URLs from the ConfigMap (auto-generated from settings.env)
         - configMapRef:
