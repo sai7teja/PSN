@@ -62,3 +62,18 @@ Because the 24GB ARM instance was out of capacity, we were forced to stabilize t
 While verifying the continuous integration pipeline (`ci.yml`), we discovered that the automated Docker build step was silently failing.
 - **The Problem:** The pipeline was programmed to tag images dynamically using the `${{ github.repository }}` environment variable. Because the GitHub repository is named `sai7teja/PSN` (with capital letters), the pipeline attempted to push the image as `ghcr.io/sai7teja/PSN`. Docker Container Registries have a strict protocol that repository tags must be exclusively lowercase. Docker rejected the push with an `invalid reference format` error.
 - **The Solution:** We refactored the CI workflow file to hardcode the lowercase equivalent (`ghcr.io/sai7teja/psn-exporter`). This ensured the reference format was valid and allowed the GitHub Action to successfully compile and push the new Python exporter image to the registry.
+
+## 12. Python Remote Writer Bug & Deployment Config Bug
+After successfully building the image, the Pod immediately entered a `CrashLoopBackOff`. We uncovered two critical bugs:
+- **The Python Auth Bug:** The `prometheus_remote_writer` library surprisingly threw a fatal validation exception on startup. It turns out the library strictly mandates passing Basic Auth as a dictionary (`{"username": ..., "password": ...}`) and fails completely if passed as a Python tuple. We refactored `exporter.py` to fix this.
+- **The URL Override Bug:** In `deployment.yaml`, the `GRAFANA_URL` environment variable was configured to pull from the `grafana-credentials` secret. This was accidentally pulling the Grafana Web UI address (`https://sai7teja.grafana.net/`) instead of the Prometheus remote write endpoint stored in `settings.env`. We removed the `secretKeyRef` override so the pod correctly fell back to the `psn-config` ConfigMap.
+
+## 13. The Final Architecture Pivot: Abandoning CSI Secrets entirely
+Even with FluxCD installed, we were still hitting API timeouts and deployment issues.
+- **The Problem:** We originally pivoted to using the GCP Secrets Store CSI driver for the PSN token because it was "lighter" than Vault. However, the CSI driver still runs DaemonSets and sidecars on the node to constantly authenticate and sync with Google Cloud. Under 1 OCPU starvation, the CSI API handshakes timed out, throwing pods into `CreateContainerConfigError` loops.
+- **The Ultimate Resolution:** We realized that *any* advanced GitOps automated secret decryption (whether CSI or SealedSecrets) fundamentally requires more than 1 OCPU to run stable decryption and synchronization loops. We completely uninstalled the CSI driver and GCP provider using Helm, and fell back to Option 1: **Manually injecting Native Kubernetes Secrets via SSH**. This completely eliminated the CPU overhead and guaranteed absolute stability on the Free Tier VM.
+
+## 14. Demystifying Grafana Cloud Tokens
+Once the application stabilized and connected to PSN, it failed to push metrics with a `401 Unauthorized` error.
+- **The Problem:** We had injected the `glsa_...` (Service Account) token into the Kubernetes secret. While this token was perfect for the AI MCP Server to *read* UI dashboards (as a Viewer), it was strictly blocked from pushing backend data.
+- **The Solution:** We documented the explicit difference in token architectures. We generated a brand new **Cloud Access Policy Token** (`glc_...`) with the `MetricsPublisher` role specifically for the backend exporter, and updated the cluster secret. The exporter instantly authenticated and pushed all 394 PSN metrics to the dashboard!
