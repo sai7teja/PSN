@@ -32,11 +32,6 @@ spec:
               secretKeyRef:
                 name: psn-credentials
                 key: PSN_TOKEN
-          - name: GRAFANA_URL
-            valueFrom:
-              secretKeyRef:
-                name: grafana-credentials
-                key: GRAFANA_URL
           - name: GRAFANA_API_KEY
             valueFrom:
               secretKeyRef:

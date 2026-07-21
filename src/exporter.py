@@ -140,7 +140,7 @@ def main():
     logger.info("=" * 60)
 
     # Initialize the Grafana Cloud remote writer
-    writer = RemoteWriter(url=grafana_url, auth=(grafana_user, grafana_api_key))
+    writer = RemoteWriter(url=grafana_url, auth={"username": grafana_user, "password": grafana_api_key})
 
     # Polling Loop
     while True:
