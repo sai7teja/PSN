@@ -20,30 +20,25 @@ We install a stripped-down version of K3s. By disabling `traefik`, `servicelb`, 
 curl -sfL https://get.k3s.io | sh -s - server --disable traefik --disable servicelb --disable metrics-server
 ```
 
-## 2. Multi-Cloud Secrets Architecture
-For enterprise-grade security, we use a hybrid approach. We use the **Kubernetes Secrets Store CSI Driver** to dynamically pull the primary PSN authentication token from Google Cloud at runtime, and rely on standard Kubernetes Secrets for secondary configuration tokens to save K3s API CPU overhead.
+## 2. Secrets Architecture Strategy
 
-### Provider 1: Google Cloud Secret Manager (PSN Token)
-- **Identity:** We created a dedicated Google Cloud Service Account (`psn-k8s-sa`) with the `SecretManager SecretAccessor` IAM role.
-- **Authentication:** The Service Account JSON key is injected into the cluster as a bootstrap secret (`gcp-sa-secret`).
-- **CSI Plugin:** The `provider-gcp-plugin` intercepts pod creation and uses the JSON key to authenticate with Google Cloud.
-- **Manifest:** `k8s/base/secret-provider-gcp.yaml` tells the CSI driver to fetch the exact secret `projects/.../secrets/psn-token/versions/latest` and mount it as a file named `PSN_TOKEN`.
+For this deployment, we rely on **Native Kubernetes Secrets manually populated via SSH**. 
+Because this cluster runs on an Oracle `VM.Standard.E2.1.Micro` instance (1 OCPU, 1GB RAM), we face severe CPU and memory constraints. 
 
-### Provider 2: Native Kubernetes Secrets (Grafana API Key)
-- **Deployment:** Standard Kubernetes Opaque Secrets.
-- **Reasoning:** We originally attempted to run HashiCorp Vault locally in the cluster. However, the cryptographic startup routines and sidecar injections of Vault required far too much CPU processing for the 1 OCPU machine to handle alongside the GitOps controller. We pivoted to native secrets for the secondary token to ensure stability.
+### Why not fully automated GitOps Secrets? (The Constraints)
+If we were running on a powerful VM or managed Kubernetes service (EKS/GKE), we would use one of the following approaches:
+1. **Secrets Store CSI Driver (GCP Secret Manager / HashiCorp Vault):** This allows pods to fetch secrets dynamically at runtime from external cloud vaults. 
+   - *Limitation:* The CSI Driver runs DaemonSets and sidecars that constantly sync and authenticate. Under 1 OCPU starvation, the crypto and API handshakes time out, throwing pods into `CreateContainerConfigError` loops.
+2. **Bitnami SealedSecrets / External Secrets Operator:** This allows you to commit encrypted secrets directly to GitHub. A controller inside the cluster decrypts them and converts them into native Kubernetes Secrets.
+   - *Limitation:* The controller demands continuous memory and CPU to watch for changes and run decryption cycles, which frequently causes `Out of Memory (OOM)` errors on 1GB instances alongside FluxCD.
 
-### Pod Integration
-In `deployment.yaml`, the pod specifies two CSI volumes:
-```yaml
-      volumes:
-        - name: gcp-secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            volumeAttributes:
-              secretProviderClass: "gcp-provider"
-```
-When the pod starts, the CSI driver connects to Google Cloud, downloads the primary secret, mounts it to the filesystem (`/mnt/gcp-secrets`), and simultaneously syncs it into standard Kubernetes environment variables so the Python script can read it alongside the Grafana token!
+### The Chosen Approach: Native Manual Secrets (Option 1)
+To ensure absolute stability, we bypass heavy controllers and keep our credentials off GitHub entirely.
+- **Identity & Tokens:** We store the `PSN_TOKEN` and `GRAFANA_TOKEN` locally on the VM.
+- **Process:** Whenever a token expires, we SSH into the VM and run a fast `kubectl create secret generic...` command to securely inject the token into the K3s datastore.
+- **Pod Integration:** The `psn-exporter` pod natively maps these lightweight K8s Secrets directly into environment variables with zero CPU overhead.
+
+While it lacks the "cool factor" of fully automated GitOps decryption, it is the *only* stable way to manage secrets securely within a 1GB/1-OCPU constraint without constant node crashes.
 
 ## 3. CI/CD Pipeline (GitHub Actions)
 The deployment is 100% automated via GitOps.
