@@ -31,7 +31,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ghcr.io/sai7teja/psn-exporter:${{ github.sha }}
 
       - name: Install Kustomize
         uses: imranismail/setup-kustomize@v2
@@ -40,7 +40,7 @@ jobs:
         run: |
           cd k8s/base
           # This updates kustomization.yaml to point to the newly built image tag
-          kustomize edit set image ghcr.io/sai7teja/psn-exporter=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          kustomize edit set image ghcr.io/sai7teja/psn-exporter=ghcr.io/sai7teja/psn-exporter:${{ github.sha }}
           
           # Commit the change back to the repository so FluxCD can detect it
           git config --global user.name 'GitHub Actions'
